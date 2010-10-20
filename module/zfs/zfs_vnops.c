@@ -580,7 +580,6 @@ out:
 }
 EXPORT_SYMBOL(zfs_read);
 
-#ifdef HAVE_ZPL /* Need to fixec after merging*/
 int zfs_file_accessed(vnode_t *vp)
 {
 	znode_t	 *zp     = VTOZ(vp);
@@ -607,14 +606,13 @@ int zfs_file_modified(vnode_t *vp)
 	ZFS_VERIFY_ZP(zp);
 
 	/* update ctime and mtime */
-	zfs_time_stamper(zp, CONTENT_MODIFIED, NULL);
+//	zfs_time_stamper(zp, CONTENT_MODIFIED, NULL);
 	zfs_inode_update(zp);
 
 	ZFS_EXIT(zfsvfs);
 	return 0;
 }
 EXPORT_SYMBOL(zfs_file_modified);
-#endif
 
 /*
  * Write the bytes to a file.
@@ -670,6 +668,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	if (n == 0)
 		return (0);
 
+	printk("uio.uio_segflg %d  function %s line %d\n", uio->uio_segflg, __FUNCTION__, __LINE__ );
+
 	if (limit == RLIM64_INFINITY || limit > MAXOFFSET_T)
 		limit = MAXOFFSET_T;
 
@@ -682,6 +682,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	    &zp->z_size, 8);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
 	    &zp->z_pflags, 8);
+
+	printk("uio.uio_segflg %d  function %s line %d\n", uio->uio_segflg, __FUNCTION__, __LINE__ );
 
 	/*
 	 * If immutable or not appending then return EPERM
@@ -716,6 +718,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	}
 #endif
 
+	printk("uio.uio_segflg %d  function %s line %d\n", uio->uio_segflg, __FUNCTION__, __LINE__ );
+
 	/*
 	 * Pre-fault the pages to ensure slow (eg NFS) pages
 	 * don't hold up txg.
@@ -726,6 +730,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		xuio = (xuio_t *)uio;
 	else
 		uio_prefaultpages(MIN(n, max_blksz), uio);
+
+	printk("uio.uio_segflg %d  function %s line %d\n", uio->uio_segflg, __FUNCTION__, __LINE__ );
 
 	/*
 	 * If in append mode, set the io offset pointer to eof.
@@ -977,6 +983,8 @@ again:
 		if (!xuio && n > 0)
 			uio_prefaultpages(MIN(n, max_blksz), uio);
 	}
+
+	printk("uio.uio_segflg %d  function %s line %d\n", uio->uio_segflg, __FUNCTION__, __LINE__ );
 
 	zfs_range_unlock(rl);
 
@@ -2682,7 +2690,9 @@ zfs_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
 
+#ifdef HAVE_ZPL
 	zfs_fuid_map_ids(zp, cr, &vap->va_uid, &vap->va_gid);
+#endif
 
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL, &mtime, 16);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL, &ctime, 16);
@@ -2718,14 +2728,14 @@ zfs_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 #else
 	vap->va_mode = zp->z_mode;
 #endif
+	printk("mode is vap %d znode %d, function %s line %d \n", vap->va_mode, zp->z_mode,__FUNCTION__, __LINE__);
 	/* FUIDs are not implemented yet. So setting uid/gid manually.
          * We were returning crgetuid and crgetgid from cr of current process.
          * On Solaris we get uid/gid by looking SID/RID
          * SID: Security Identifier. RID: Relative ID*/
-#ifdef HAVE_ZPL
-#endif
 	vap->va_uid = zp->z_uid;
 	vap->va_gid = zp->z_gid;
+	printk("uid at vap %d gid vap %d, function %s line %d \n", vap->va_uid, vap->va_gid,__FUNCTION__, __LINE__);
 	vap->va_fsid = zp->z_zfsvfs->z_vfs->vfs_dev;
 	vap->va_nodeid = zp->z_id;
 	if ((vp->v_flag & VROOT) && zfs_show_ctldir(zp))
@@ -3315,6 +3325,7 @@ top:
 		else
 			dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 	}
+	printk("mode setattr %d function %s line %d \n", zp->z_mode, __FUNCTION__, __LINE__);
 
 	if (attrzp) {
 		dmu_tx_hold_sa(tx, attrzp->z_sa_hdl, B_FALSE);
@@ -3343,16 +3354,16 @@ top:
 	 */
 
 
+	printk("mode setattr %d function %s line %d \n", zp->z_mode, __FUNCTION__, __LINE__);
 	if (mask & (AT_UID|AT_GID|AT_MODE))
-		zp->z_mode = new_mode;
-#ifdef HAVE_ZPL
 		mutex_enter(&zp->z_acl_lock);
 	mutex_enter(&zp->z_lock);
-#endif
+//	zp->z_mode = new_mode;
 
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
 	    &zp->z_pflags, sizeof (zp->z_pflags));
 
+	printk("mode setattr %d function %s line %d \n", zp->z_mode, __FUNCTION__, __LINE__);
 	if (attrzp) {
 		if (mask & (AT_UID|AT_GID|AT_MODE))
 			mutex_enter(&attrzp->z_acl_lock);
@@ -3362,6 +3373,7 @@ top:
 		    sizeof (attrzp->z_pflags));
 	}
 
+	printk("zp mode %d function %s line %d \n", zp->z_mode, __FUNCTION__, __LINE__);
 	if (mask & (AT_UID|AT_GID)) {
 
 		if (mask & AT_UID) {
@@ -3392,18 +3404,25 @@ top:
 			    NULL, &new_mode, sizeof (new_mode));
 			new_mode = zp->z_mode;
 		}
+	printk("mode setattr %d function %s line %d \n", zp->z_mode, __FUNCTION__, __LINE__);
+#ifdef HAVE_ZPL
 		err = zfs_acl_chown_setattr(zp);
 		ASSERT(err == 0);
 		if (attrzp) {
 			err = zfs_acl_chown_setattr(attrzp);
 			ASSERT(err == 0);
 		}
+#endif
 	}
 
 	if (mask & AT_MODE) {
+	printk("mode setattr %d function %s line %d \n", zp->z_mode, __FUNCTION__, __LINE__);
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MODE(zfsvfs), NULL,
 		    &new_mode, sizeof (new_mode));
+	printk("mode setattr %d function %s line %d \n", zp->z_mode, __FUNCTION__, __LINE__);
 		zp->z_mode = new_mode;
+	printk("mode setattr %d function %s line %d \n", zp->z_mode, __FUNCTION__, __LINE__);
+#ifdef HAVE_ZPL
 		ASSERT3U((uintptr_t)aclp, !=, NULL);
 		err = zfs_aclset_common(zp, aclp, cr, tx);
 		ASSERT3U(err, ==, 0);
@@ -3411,9 +3430,10 @@ top:
 			zfs_acl_free(zp->z_acl_cached);
 		zp->z_acl_cached = aclp;
 		aclp = NULL;
+#endif
 	}
 
-
+	printk("mode setattr %d function %s line %d \n", zp->z_mode, __FUNCTION__, __LINE__);
 	if (mask & AT_ATIME) {
 		ZFS_TIME_ENCODE(&vap->va_atime, zp->z_atime);
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_ATIME(zfsvfs), NULL,
@@ -3526,6 +3546,7 @@ out:
 		zfs_inode_update(zp);
 	}
 
+	printk("mode setattr %d function %s line %d \n", zp->z_mode, __FUNCTION__, __LINE__);
 out2:
 	if (zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
 		zil_commit(zilog, 0);
@@ -3983,15 +4004,18 @@ out:
 	zfs_inode_update(sdzp);
 	if (sdzp == tdzp)
 		rw_exit(&sdzp->z_name_lock);
-
-
+	if (sdzp != tdzp) {
+		zfs_inode_update(tdzp);
+	}
+	zfs_inode_update(szp);
 	if (tzp) {
 		zfs_inode_update(tzp);
 	}
 	VN_RELE(ZTOV(szp));
-	if (tzp)
+	if (tzp) {
+		zfs_inode_update(tzp);
 		VN_RELE(ZTOV(tzp));
-
+	}
 	if (zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
 		zil_commit(zilog, 0);
 

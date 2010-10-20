@@ -635,7 +635,8 @@ zfs_znode_dmu_fini(znode_t *zp)
 
 void
 zfs_inode_alloc(zfsvfs_t *zfsvfs, znode_t *zp, dmu_buf_t *db, 
-		dmu_object_type_t obj_type, struct inode *inode)
+		dmu_object_type_t obj_type, sa_handle_t *hdl, 
+		struct inode *inode)
 {
 	vfs_t		*vfs;
 	vnode_t		*vp;
@@ -643,7 +644,6 @@ zfs_inode_alloc(zfsvfs_t *zfsvfs, znode_t *zp, dmu_buf_t *db,
 	uint64_t parent;
 	sa_bulk_attr_t bulk[9];
 	int count = 0;
-        sa_handle_t *hdl = NULL;
 #if 0
 	uint32_t	blksize;
 #endif
@@ -669,9 +669,11 @@ zfs_inode_alloc(zfsvfs_t *zfsvfs, znode_t *zp, dmu_buf_t *db,
 	vp->v_vfsp = vfs;
 	vp->v_count = 1;
 
+	printk("mode %llu  line %d function %s\n", mode, __LINE__, __FUNCTION__);
 //	printk("  vp->v_data is at %p and  zp is at %p  in %s  \n" ,vp->v_data, zp, __FUNCTION__);
         zfs_znode_sa_init(zfsvfs, zp, db, obj_type, hdl);
 
+	printk("mode %llu  line %d function %s\n", mode, __LINE__, __FUNCTION__);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MODE(zfsvfs), NULL, &mode, 8);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_GEN(zfsvfs), NULL, &zp->z_gen, 8);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_SIZE(zfsvfs), NULL,
@@ -688,6 +690,7 @@ zfs_inode_alloc(zfsvfs_t *zfsvfs, znode_t *zp, dmu_buf_t *db,
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_GID(zfsvfs), NULL,
 	    &zp->z_gid, 8);
 
+	printk("mode %llu  line %d function %s\n", mode, __LINE__, __FUNCTION__);
 	if (sa_bulk_lookup(zp->z_sa_hdl, bulk, count) != 0 || zp->z_gen == 0) {
 		if (hdl == NULL)
 			sa_handle_destroy(zp->z_sa_hdl);
@@ -707,7 +710,8 @@ zfs_inode_alloc(zfsvfs_t *zfsvfs, znode_t *zp, dmu_buf_t *db,
 	inode->i_mode = (uint32_t)zp->z_mode;
 	if ((S_ISCHR(inode->i_mode)) ||  (S_ISBLK(inode->i_mode))) {
 		inode->i_rdev = SA_ZPL_RDEV(zfsvfs); 
-}
+	}
+	printk("mode is inode %d znode %d, function %s line %d \n", inode->i_mode, zp->z_mode,__FUNCTION__, __LINE__);
 #if 0
 	/* struct inode members are updated in zfs_inode_update
 	 * */
@@ -740,6 +744,8 @@ void zfs_inode_update(znode_t *zp)
 	vnode_t		*vp;
 	struct inode    *inode;
 	uint32_t	blksize;
+	zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
+	uint64_t	atime[2], mtime[2], ctime[2];
 
 	vp = ZTOV(zp);
 	inode = LZFS_VTOI(vp);
@@ -755,11 +761,18 @@ void zfs_inode_update(znode_t *zp)
 				(u_longlong_t *)&inode->i_blocks);
 	spin_unlock(&inode->i_lock);
 
+	sa_lookup(zp->z_sa_hdl, SA_ZPL_ATIME(zfsvfs), &atime, 16);
+	sa_lookup(zp->z_sa_hdl, SA_ZPL_MTIME(zfsvfs), &mtime, 16);
+	sa_lookup(zp->z_sa_hdl, SA_ZPL_CTIME(zfsvfs), &ctime, 16);
 	/* TODO  (PRASAD) (Neependra Merging)
 	 * 	modify inode number of blocks 
 	 * 	modify inode block size
 	 */
-	ZFS_TIME_DECODE(&inode->i_atime, zp->z_atime);
+	printk("atime0 %llu atime1 %llu function %s line %d\n ", atime[0], atime[1], __FUNCTION__, __LINE__);
+	printk("mtime0 %llu mtime1 %llu function %s line %d\n ", mtime[0], mtime[1], __FUNCTION__, __LINE__);
+	ZFS_TIME_DECODE(&inode->i_atime, atime);
+	ZFS_TIME_DECODE(&inode->i_mtime, mtime);
+	ZFS_TIME_DECODE(&inode->i_ctime, ctime);
 /*      Need a way to update mtime and time
 	ZFS_TIME_DECODE(&inode->i_mtime, zp->zp_mtime);
 	ZFS_TIME_DECODE(&inode->i_ctime, zp->zp_ctime);
@@ -780,7 +793,7 @@ void zfs_inode_update(znode_t *zp)
 #ifdef LINUX_PORT
 static znode_t *
 zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
-    dmu_object_type_t obj_type, struct inode *inode)
+    dmu_object_type_t obj_type, sa_handle_t *hdl, struct inode *inode)
 #else 
 static znode_t *
 zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
@@ -794,7 +807,6 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	uint64_t parent;
 	sa_bulk_attr_t bulk[9];
 	int count = 0;
-        sa_handle_t *hdl = NULL;
 #endif
 
 	zp = kmem_cache_alloc(znode_cache, KM_SLEEP & (~(__GFP_FS)));
@@ -818,7 +830,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_sync_cnt = 0;
 
 #ifdef LINUX_PORT 
-	zfs_inode_alloc(zfsvfs, zp, db, obj_type, inode);
+	zfs_inode_alloc(zfsvfs, zp, db, obj_type, hdl, inode);
 #else 
 	vp = ZTOV(zp);
 	vn_reinit(vp);
@@ -1036,7 +1048,11 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 	}
 
 	parent = dzp->z_id;
+#ifdef HAVE_ZPL
 	mode = acl_ids->z_mode;
+#else
+	mode = MAKEIMODE(vap->va_type, vap->va_mode);
+#endif
 	if (flag & IS_XATTR)
 		pflags |= ZFS_XATTR;
 
@@ -1055,12 +1071,14 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 	} else {
 		ZFS_TIME_ENCODE(&now, atime);
 	}
-
+	printk("atime0 %llu atime1 %llu function %s line %d\n ", atime[0], atime[1], __FUNCTION__, __LINE__);
+	
 	if (vap->va_mask & AT_MTIME) {
 		ZFS_TIME_ENCODE(&vap->va_mtime, mtime);
 	} else {
 		ZFS_TIME_ENCODE(&now, mtime);
 	}
+	printk("mtime0 %llu mtime1 %llu function %s line %d\n ", mtime[0], mtime[1], __FUNCTION__, __LINE__);
 
 	/* Now add in all of the "SA" attributes */
 	VERIFY(0 == sa_handle_get_from_db(zfsvfs->z_os, db, NULL, SA_HDL_SHARED,
@@ -1145,8 +1163,10 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 		SA_ADD_BULK_ATTR(sa_attrs, cnt, SA_ZPL_DACL_ACES(zfsvfs),
 		    zfs_acl_data_locator, &locate,
 		    acl_ids->z_aclp->z_acl_bytes);
+#ifdef HAVE_ZPL
 		mode = zfs_mode_compute(mode, acl_ids->z_aclp, &pflags,
 		    acl_ids->z_fuid, acl_ids->z_fgid);
+#endif
 	}
 
 	VERIFY(sa_replace_all_by_template(sa_hdl, sa_attrs, cnt, tx) == 0);
@@ -1155,7 +1175,7 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 #ifdef LINUX_PORT
 		inode = iget_locked(zfsvfs->z_vfs->vfs_super, obj);
 		ASSERT(inode != NULL && atomic_read(&inode->i_count) > 0);
-		*zpp = zfs_znode_alloc(zfsvfs, db, 0, obj_type, inode);
+		*zpp = zfs_znode_alloc(zfsvfs, db, 0, obj_type, sa_hdl, inode);
 #else
                 *zpp = zfs_znode_alloc(zfsvfs, db, 0, obj_type, sa_hdl);
 		ASSERT(*zpp != NULL);
@@ -1364,7 +1384,7 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 	printk("inode number %lu function %s line %d\n", inode->i_ino, __FUNCTION__, __LINE__);
 
 	zp = zfs_znode_alloc(zfsvfs, db, doi.doi_data_block_size, 
-			doi.doi_bonus_type, inode);
+			doi.doi_bonus_type, NULL, inode);
 #else
         zp = zfs_znode_alloc(zfsvfs, db, doi.doi_data_block_size,
 	    doi.doi_bonus_type, NULL);
